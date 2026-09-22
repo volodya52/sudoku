@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Судоку</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Судоку</h1>
+
+    <div class="controls">
+      <div class="difficulty" id="difficulty">
+        <button class="diff-btn active" data-diff="easy" title="Разблокирован">Легко</button>
+        <button class="diff-btn" data-diff="medium" title="Заблокирован">🔒 Средне</button>
+        <button class="diff-btn" data-diff="hard" title="Заблокирован">🔒 Сложно</button>
+        <button class="diff-btn" data-diff="expert" title="Заблокирован">🔒 Эксперт</button>
+        <button class="diff-btn" data-diff="master" title="Заблокирован">🔒 Мастер</button>
+      </div>
+      <button id="new-game" class="btn">Новая игра</button>
+    </div>
+
+    <div class="status-bar">
+      <span>⏱ <span id="timer">00:00</span></span>
+      <span>🏆 <span id="score">0</span> очк.</span>
+      <span class="combo" id="combo"></span>
+      <span>❌ Ошибки: <span id="mistakes">0</span>/3</span>
+    </div>
+
+    <div id="board" class="board"></div>
+
+    <div class="numpad" id="numpad">
+      <button class="num-btn" data-num="1">1</button>
+      <button class="num-btn" data-num="2">2</button>
+      <button class="num-btn" data-num="3">3</button>
+      <button class="num-btn" data-num="4">4</button>
+      <button class="num-btn" data-num="5">5</button>
+      <button class="num-btn" data-num="6">6</button>
+      <button class="num-btn" data-num="7">7</button>
+      <button class="num-btn" data-num="8">8</button>
+      <button class="num-btn" data-num="9">9</button>
+      <button class="num-btn erase" data-num="0">⌫</button>
+    </div>
+
+    <div class="actions">
+      <button id="notes-toggle" class="btn">✏ Заметки: выкл</button>
+      <button id="hint" class="btn">💡 Подсказка</button>
+      <button id="check" class="btn">✔ Проверить</button>
+    </div>
+
+    <p id="message" class="message"></p>
+  </div>
+
+  <!-- Модальное окно завершения игры -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <h2 id="modal-title">Поздравляем!</h2>
+      <p id="modal-text"></p>
+      <button id="modal-close" class="btn">Новая игра</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
