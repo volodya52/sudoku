@@ -15,6 +15,7 @@ let timerId = null;
 let seconds = 0;
 let notesMode = false;
 let gameOver = false;
+let paused = false;      // игра на паузе
 let score = 0;         // очки за текущую игру
 let streak = 0;        // серия правильных цифр подряд
 let lastFlashCombo = 1; // последний множитель, для которого показана вспышка
@@ -33,9 +34,13 @@ const LEVEL_ORDER = Object.keys(LEVELS);
 const WINS_TO_UNLOCK = 5;
 const STORAGE_KEY = "sudoku_progress";
 const BEST_SCORE_KEY = "sudoku_best_scores";
+const SAVE_KEY = "sudoku_saved_game";
 
 // Прогресс игрока: количество побед на каждом уровне
 let progress = loadProgress();
+
+// Статистика игрока по уровням (для профиля)
+let stats = getStats();
 
 function loadProgress() {
   try {
@@ -208,31 +213,89 @@ function saveBestScore() {
   return false;
 }
 
+// ============================================================
+//  Статистика игрока (для профиля)
+// ============================================================
+
+const STATS_KEY = "sudoku_stats";
+
+// stats[level] = { played, wins, bestScore, bestTime, bestCombo }
+function getStats() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STATS_KEY));
+    if (saved && typeof saved === "object") return saved;
+  } catch (e) { /* повреждённые данные */ }
+  return {};
+}
+
+function saveStats() {
+  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+}
+
+// Обновление статистики уровня после завершённой игры
+function updateStats(level, { won, time = 0, score = 0, bestCombo = 1 }) {
+  if (!stats[level]) {
+    stats[level] = { played: 0, wins: 0, bestScore: 0, bestTime: null, bestCombo: 0 };
+  }
+  const s = stats[level];
+  s.played++;
+  if (won) {
+    s.wins++;
+    // Лучшее время
+    if (s.bestTime === null || time < s.bestTime) s.bestTime = time;
+    // Лучший счёт
+    if (score > s.bestScore) s.bestScore = score;
+    // Лучшее комбо
+    if (bestCombo > s.bestCombo) s.bestCombo = bestCombo;
+  }
+}
+
+// Форматирование секунд в "мм:сс"
+function formatTime(totalSeconds) {
+  const m = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const s = String(totalSeconds % 60).padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+// ---------- Экран профиля ----------
+
+const profileScreen = document.getElementById("profile-screen");
+
+// Отрисовка карточек статистики по уровням
+function renderProfile() {
+  const container = document.getElementById("profile-stats");
+  container.innerHTML = "";
+
+  for (const level of LEVEL_ORDER) {
+    const meta = LEVELS[level];
+    const s = stats[level] || { played: 0, wins: 0, bestScore: 0, bestTime: null, bestCombo: 0 };
+    const unlocked = isUnlocked(level);
+    const winRate = s.played ? Math.round((s.wins / s.played) * 100) : 0;
+
+    const row = document.createElement("div");
+    row.className = "profile-row" + (unlocked ? "" : " locked");
+    row.innerHTML = unlocked
+      ? `<div class="level-name">${meta.name}</div>
+         <div class="level-stats">
+           <span>🎮 Игр: ${s.played}</span>
+           <span>🏆 Побед: ${s.wins}</span>
+           <span>📊 WIN%: ${winRate}%</span>
+           <span>⭐ Рекорд: ${s.bestScore || "—"}</span>
+           <span>⏱ ${s.bestTime !== null ? formatTime(s.bestTime) : "--:--"}</span>
+           <span>🔥 x${s.bestCombo || 1}</span>
+         </div>`
+      : `<div class="level-name">🔒 ${meta.name}</div>
+         <div class="level-stats"><span>Уровень ещё закрыт</span></div>`;
+    container.appendChild(row);
+  }
+}
+
 // Разблокирован ли уровень
 function isUnlocked(level) {
   const idx = LEVEL_ORDER.indexOf(level);
   if (idx <= 0) return true; // первый уровень всегда открыт
   const prev = LEVEL_ORDER[idx - 1];
   return progress[prev] >= LEVELS[level].unlockAfter;
-}
-
-// Обновление подписей кнопок сложности: замок + счётчик прогресса
-function renderDifficultyButtons() {
-  document.querySelectorAll(".diff-btn").forEach((btn) => {
-    const level = btn.dataset.diff;
-    const meta = LEVELS[level];
-    const unlocked = isUnlocked(level);
-    btn.classList.toggle("locked", !unlocked);
-    btn.title = unlocked ? "Доступен" : `Откроется после ${meta.unlockAfter} побед на уровне «${LEVELS[LEVEL_ORDER[LEVEL_ORDER.indexOf(level) - 1]].name}»`;
-
-    if (unlocked) {
-      btn.textContent = meta.name;
-    } else {
-      const prev = LEVEL_ORDER[LEVEL_ORDER.indexOf(level) - 1];
-      btn.innerHTML = `🔒 ${meta.name}<span class="progress">${progress[prev]}/${meta.unlockAfter} побед</span>`;
-    }
-    btn.classList.toggle("active", level === difficulty);
-  });
 }
 
 // ---------- DOM ----------
@@ -246,6 +309,12 @@ const modalText = document.getElementById("modal-text");
 const notesBtn = document.getElementById("notes-toggle");
 const scoreEl = document.getElementById("score");
 const comboEl = document.getElementById("combo");
+const startScreen = document.getElementById("start-screen");
+const gameScreen = document.getElementById("game-screen");
+const btnContinue = document.getElementById("btn-continue");
+const diffModal = document.getElementById("diff-modal");
+const diffSelect = document.getElementById("diff-select");
+const pauseModal = document.getElementById("pause-modal");
 
 // ============================================================
 //  Генерация судоку
@@ -361,8 +430,36 @@ function generatePuzzle(clues) {
 //  Отрисовка
 // ============================================================
 
-function renderBoard() {
+function renderBoard(hideValues = false) {
   boardEl.innerHTML = "";
+
+  // Игра ещё не создана (стартовый экран) — рисуем пустую сетку
+  if (!puzzle.length || !board.length) {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        boardEl.appendChild(cell);
+      }
+    }
+    return;
+  }
+
+  // При паузе поле отрисовывается пустым (цифры скрыты)
+  if (hideValues || paused) {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        boardEl.appendChild(cell);
+      }
+    }
+    return;
+  }
 
   // Предварительный расчёт подсветки для выбранной клетки
   let peers = null; // Set клеток "r,c" той же строки/столбца/блока
@@ -433,7 +530,7 @@ function renderBoard() {
 }
 
 function selectCell(r, c) {
-  if (gameOver) return;
+  if (gameOver || paused) return;
   selected = { r, c };
   renderBoard();
 }
@@ -443,7 +540,7 @@ function selectCell(r, c) {
 // ============================================================
 
 function inputNumber(num) {
-  if (gameOver || !selected) return;
+  if (gameOver || paused || !selected) return;
   const { r, c } = selected;
   if (puzzle[r][c] !== 0) return; // фиксированную клетку менять нельзя
 
@@ -487,6 +584,7 @@ function inputNumber(num) {
       }
     }
   }
+  saveGame(); // автосохранение после каждого хода
   renderBoard();
 }
 
@@ -498,7 +596,7 @@ function isSolved() {
 }
 
 function giveHint() {
-  if (gameOver) return;
+  if (gameOver || paused) return;
   const empties = [];
   for (let r = 0; r < 9; r++)
     for (let c = 0; c < 9; c++)
@@ -512,6 +610,7 @@ function giveHint() {
   penalizeHint();
   checkDigitDone(solution[r][c]);
   showMessage("Подсказка использована (-10 очков)");
+  saveGame();
   renderBoard();
   if (isSolved()) {
     endGame(true);
@@ -520,15 +619,54 @@ function giveHint() {
   streak = 0; // подсказка сбрасывает серию
 }
 
-function checkBoard() {
-  if (gameOver) return;
-  let wrong = 0;
-  for (let r = 0; r < 9; r++)
-    for (let c = 0; c < 9; c++)
-      if (board[r][c] !== 0 && board[r][c] !== solution[r][c]) wrong++;
-  showMessage(
-    wrong === 0 ? "Пока всё верно! 👍" : `Неверных чисел: ${wrong}`
-  );
+function endGame(won) {
+  gameOver = true;
+  clearInterval(timerId);
+  clearSavedGame(); // игра завершена — сохранение больше не нужно
+  const time = timerEl.textContent;
+  const levelName = LEVELS[difficulty].name;
+
+  if (won) {
+    // Записываем победу и проверяем разблокировку новых уровней
+    const before = LEVEL_ORDER.map((l) => isUnlocked(l));
+    progress[difficulty]++;
+    saveProgress();
+    updateStats(difficulty, { won: true, time: seconds, score, bestCombo });
+    saveStats();
+    const newlyUnlocked = LEVEL_ORDER
+      .map((l, i) => (i > 0 && !before[i] && isUnlocked(l) ? LEVELS[l].name : null))
+      .filter(Boolean);
+    renderDiffSelect();
+
+    // Бонус за победу и рекорд
+    const { levelBonus, speedBonus } = addWinBonus();
+    const isRecord = saveBestScore();
+    const best = getBestScores()[difficulty];
+
+    let unlockMsg = "";
+    if (newlyUnlocked.length > 0)
+      unlockMsg = `\n\n🔓 Открыт новый уровень: ${newlyUnlocked.join(", ")}!`;
+
+    modalTitle.textContent = "🎉 Поздравляем!";
+    modalText.textContent =
+      `Вы решили судоку (${levelName}) за ${time}!\n` +
+      `🏆 Итоговые очки: ${score}\n` +
+      `🔥 Лучшее комбо: x${bestCombo % 1 ? bestCombo.toFixed(1) : bestCombo}\n` +
+      `Бонус за победу: +${levelBonus}, за скорость: +${speedBonus}\n` +
+      (isRecord ? `⭐ Новый рекорд уровня!` : `Рекорд уровня: ${best}`) +
+      unlockMsg;
+  } else {
+    updateStats(difficulty, { won: false });
+    saveStats();
+    modalTitle.textContent = "😢 Игра окончена";
+    modalText.textContent = "Вы превысили лимит ошибок. Попробуйте ещё раз!";
+  }
+  modal.classList.remove("hidden");
+}
+
+function showMessage(text) {
+  messageEl.textContent = text;
+  setTimeout(() => (messageEl.textContent = ""), 2500);
 }
 
 // ============================================================
@@ -578,6 +716,10 @@ function resetNumButtons() {
   });
 }
 
+// ============================================================
+//  Таймер
+// ============================================================
+
 function startTimer() {
   clearInterval(timerId);
   seconds = 0;
@@ -590,49 +732,187 @@ function startTimer() {
   }, 1000);
 }
 
-function endGame(won) {
-  gameOver = true;
-  clearInterval(timerId);
-  const time = timerEl.textContent;
-  const levelName = LEVELS[difficulty].name;
+// ============================================================
+//  Экраны (стартовый / игровой / профиль) и окна
+// ============================================================
 
-  if (won) {
-    // Записываем победу и проверяем разблокировку новых уровней
-    const before = LEVEL_ORDER.map((l) => isUnlocked(l));
-    progress[difficulty]++;
-    saveProgress();
-    const newlyUnlocked = LEVEL_ORDER
-      .map((l, i) => (i > 0 && !before[i] && isUnlocked(l) ? LEVELS[l].name : null))
-      .filter(Boolean);
-    renderDifficultyButtons();
+const SCREENS = { start: startScreen, game: gameScreen, profile: profileScreen };
 
-    // Бонус за победу и рекорд
-    const { levelBonus, speedBonus } = addWinBonus();
-    const isRecord = saveBestScore();
-    const best = getBestScores()[difficulty];
-
-    let unlockMsg = "";
-    if (newlyUnlocked.length > 0)
-      unlockMsg = `\n\n🔓 Открыт новый уровень: ${newlyUnlocked.join(", ")}!`;
-
-    modalTitle.textContent = "🎉 Поздравляем!";
-    modalText.textContent =
-      `Вы решили судоку (${levelName}) за ${time}!\n` +
-      `🏆 Итоговые очки: ${score}\n` +
-      `🔥 Лучшее комбо: x${bestCombo % 1 ? bestCombo.toFixed(1) : bestCombo}\n` +
-      `Бонус за победу: +${levelBonus}, за скорость: +${speedBonus}\n` +
-      (isRecord ? `⭐ Новый рекорд уровня!` : `Рекорд уровня: ${best}`) +
-      unlockMsg;
+function showScreen(name) {
+  // Плавный переход: сначала гасим текущий экран, потом показываем новый
+  if (name === "profile") renderProfile();
+  const current = document.querySelector(".screen.active");
+  if (current && current.id === name) return;
+  const switchTo = () => {
+    for (const [key, el] of Object.entries(SCREENS))
+      el.classList.toggle("active", key === name);
+  };
+  if (current) {
+    current.classList.remove("active");
+    setTimeout(switchTo, 200);
   } else {
-    modalTitle.textContent = "😢 Игра окончена";
-    modalText.textContent = "Вы превысили лимит ошибок. Попробуйте ещё раз!";
+    switchTo();
   }
-  modal.classList.remove("hidden");
 }
 
-function showMessage(text) {
-  messageEl.textContent = text;
-  setTimeout(() => (messageEl.textContent = ""), 2500);
+// Открытие окна выбора сложности (для новой игры)
+function openDiffModal() {
+  renderDiffSelect();
+  diffModal.classList.remove("hidden");
+}
+
+function closeDiffModal() {
+  diffModal.classList.add("hidden");
+}
+
+// Кнопки выбора сложности в окне
+function renderDiffSelect() {
+  diffSelect.innerHTML = "";
+  for (const level of LEVEL_ORDER) {
+    const meta = LEVELS[level];
+    const btn = document.createElement("button");
+    btn.className = "diff-btn";
+    btn.dataset.diff = level;
+    const unlocked = isUnlocked(level);
+    if (unlocked) {
+      btn.textContent = meta.name;
+    } else {
+      const prev = LEVEL_ORDER[LEVEL_ORDER.indexOf(level) - 1];
+      btn.innerHTML = `🔒 ${meta.name}<span class="progress">${progress[prev]}/${meta.unlockAfter}</span>`;
+      btn.classList.add("locked");
+    }
+    btn.addEventListener("click", () => {
+      if (!isUnlocked(level)) return; // заблокированный уровень не нажимается
+      difficulty = level;
+      closeDiffModal();
+      newGame();
+    });
+    diffSelect.appendChild(btn);
+  }
+}
+
+// ============================================================
+//  Пауза
+// ============================================================
+
+function pauseGame() {
+  if (gameOver || paused) return;
+  paused = true;
+  clearInterval(timerId);   // таймер останавливается
+  saveGame();               // прогресс сохраняется
+  updateContinueButton();
+  pauseModal.classList.remove("hidden");
+  renderBoard(true);        // цифры скрываются, чтобы не подглядывать
+}
+
+function resumeGame() {
+  if (!paused) return;
+  paused = false;
+  pauseModal.classList.add("hidden");
+  // Таймер продолжается с сохранённого времени
+  clearInterval(timerId);
+  timerId = setInterval(() => {
+    seconds++;
+    const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const s = String(seconds % 60).padStart(2, "0");
+    timerEl.textContent = `${m}:${s}`;
+  }, 1000);
+  renderBoard();
+}
+
+// Выход из игры в меню: прогресс сохраняется, можно продолжить позже
+function exitGame() {
+  paused = false;
+  pauseModal.classList.add("hidden");
+  clearInterval(timerId);
+  saveGame();
+  updateContinueButton();
+  showScreen("start");
+}
+
+// ============================================================
+//  Сохранение незавершённой игры
+// ============================================================
+
+function saveGame() {
+  if (gameOver) return;
+  const data = {
+    difficulty,
+    solution,
+    puzzle,
+    board,
+    notes: notes.map((row) => row.map((set) => [...set])),
+    mistakes,
+    seconds,
+    score,
+    streak,
+    bestCombo,
+    doneDigits: [...doneDigits],
+  };
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (e) { /* нет места — игнорируем */ }
+}
+
+function loadSavedGame() {
+  try {
+    const data = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (data && data.board && data.solution) return data;
+  } catch (e) { /* повреждённое сохранение */ }
+  return null;
+}
+
+function clearSavedGame() {
+  localStorage.removeItem(SAVE_KEY);
+}
+
+// Обновление видимости кнопки «Продолжить» на стартовом экране
+function updateContinueButton() {
+  btnContinue.classList.toggle("hidden", !loadSavedGame());
+}
+
+// Продолжение сохранённой игры
+function continueGame() {
+  const data = loadSavedGame();
+  if (!data) return;
+
+  difficulty = data.difficulty;
+  solution = data.solution;
+  puzzle = data.puzzle;
+  board = data.board;
+  notes = data.notes.map((row) => row.map((arr) => new Set(arr)));
+  mistakes = data.mistakes;
+  seconds = data.seconds;
+  score = data.score;
+  streak = data.streak;
+  bestCombo = data.bestCombo || 1;
+  doneDigits = new Set(data.doneDigits || []);
+
+  selected = null;
+  gameOver = false;
+  paused = false;
+  mistakesEl.textContent = mistakes;
+  updateScoreDisplay();
+  resetComboDisplay();
+  // Восстановление кнопок «вышедших» цифр
+  resetNumButtons();
+  for (const n of doneDigits) markNumButtonDone(n);
+  modal.classList.add("hidden");
+
+  // Таймер продолжается с сохранённого времени
+  clearInterval(timerId);
+  timerId = setInterval(() => {
+    seconds++;
+    const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const s = String(seconds % 60).padStart(2, "0");
+    timerEl.textContent = `${m}:${s}`;
+  }, 1000);
+  const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const s = String(seconds % 60).padStart(2, "0");
+  timerEl.textContent = `${m}:${s}`;
+
+  showScreen("game");
+  renderBoard();
 }
 
 // ============================================================
@@ -658,8 +938,12 @@ function newGame() {
   resetComboDisplay();
   resetNumButtons();
   modal.classList.add("hidden");
+  clearSavedGame(); // новая игра заменяет сохранённую
+  paused = false;
   startTimer();
+  showScreen("game");
   renderBoard();
+  renderDiffSelect();
 }
 
 // ============================================================
@@ -670,27 +954,35 @@ document.querySelectorAll(".num-btn").forEach((btn) =>
   btn.addEventListener("click", () => inputNumber(Number(btn.dataset.num)))
 );
 
-document.querySelectorAll(".diff-btn").forEach((btn) =>
-  btn.addEventListener("click", () => {
-    const level = btn.dataset.diff;
-    if (!isUnlocked(level)) {
-      const prev = LEVEL_ORDER[LEVEL_ORDER.indexOf(level) - 1];
-      showMessage(
-        `🔒 Уровень заблокирован. Нужно ${LEVELS[level].unlockAfter} побед на уровне «${LEVELS[prev].name}» (${progress[prev]}/${LEVELS[level].unlockAfter})`
-      );
-      return;
-    }
-    document.querySelectorAll(".diff-btn").forEach((b) => b.classList.remove("active"));
-    difficulty = level;
-    renderDifficultyButtons();
-    newGame();
-  })
-);
-
-document.getElementById("new-game").addEventListener("click", newGame);
 document.getElementById("hint").addEventListener("click", giveHint);
-document.getElementById("check").addEventListener("click", checkBoard);
-document.getElementById("modal-close").addEventListener("click", newGame);
+document.getElementById("modal-close").addEventListener("click", () => {
+  // Закрываем окно завершения и открываем выбор сложности для новой игры
+  modal.classList.add("hidden");
+  clearSavedGame();
+  showScreen("start");
+  updateContinueButton();
+  openDiffModal();
+});
+
+// Стартовый экран
+document.getElementById("btn-new-game").addEventListener("click", openDiffModal);
+document.getElementById("btn-continue").addEventListener("click", continueGame);
+document.getElementById("btn-profile").addEventListener("click", () => showScreen("profile"));
+document.getElementById("profile-back").addEventListener("click", () => showScreen("start"));
+document.getElementById("diff-cancel").addEventListener("click", closeDiffModal);
+
+// Пауза
+document.getElementById("pause").addEventListener("click", pauseGame);
+document.getElementById("pause-resume").addEventListener("click", resumeGame);
+document.getElementById("pause-exit").addEventListener("click", exitGame);
+
+// Кнопка «На главный экран» в окне завершения игры
+document.getElementById("modal-exit").addEventListener("click", () => {
+  modal.classList.add("hidden");
+  clearSavedGame();
+  showScreen("start");
+  updateContinueButton();
+});
 
 notesBtn.addEventListener("click", () => {
   notesMode = !notesMode;
@@ -699,8 +991,14 @@ notesBtn.addEventListener("click", () => {
   notesBtn.style.color = notesMode ? "#2c3e50" : "";
 });
 
-// Клавиатура: цифры, Backspace, стрелки для навигации
+// Клавиатура: цифры, Backspace, стрелки для навигации, Esc — пауза
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (paused) resumeGame();
+    else if (!gameOver && gameScreen.classList.contains("active")) pauseGame();
+    return;
+  }
+  if (paused) return; // во время паузы ввод отключён
   if (e.key >= "1" && e.key <= "9") inputNumber(Number(e.key));
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0")
     inputNumber(0);
@@ -717,6 +1015,7 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// Старт
-renderDifficultyButtons();
-newGame();
+// Старт: показываем стартовый экран (поле отрисуется при старте игры)
+renderDiffSelect();
+updateContinueButton();
+showScreen("start");

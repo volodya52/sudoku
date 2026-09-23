@@ -7,25 +7,36 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <h1>Судоку</h1>
-
-    <div class="controls">
-      <div class="difficulty" id="difficulty">
-        <button class="diff-btn active" data-diff="easy" title="Разблокирован">Легко</button>
-        <button class="diff-btn" data-diff="medium" title="Заблокирован">🔒 Средне</button>
-        <button class="diff-btn" data-diff="hard" title="Заблокирован">🔒 Сложно</button>
-        <button class="diff-btn" data-diff="expert" title="Заблокирован">🔒 Эксперт</button>
-        <button class="diff-btn" data-diff="master" title="Заблокирован">🔒 Мастер</button>
-      </div>
-      <button id="new-game" class="btn">Новая игра</button>
+  <!-- Стартовый экран -->
+  <div id="start-screen" class="screen active">
+    <h1 class="game-title">Судоку</h1>
+    <div class="start-buttons">
+      <button id="btn-new-game" class="btn start-btn">Новая игра</button>
+      <button id="btn-continue" class="btn start-btn hidden">Продолжить</button>
+      <button id="btn-profile" class="btn start-btn">👤 Профиль</button>
     </div>
+  </div>
+
+  <!-- Экран профиля -->
+  <div id="profile-screen" class="screen">
+    <div class="profile-container">
+      <h1 class="profile-title">👤 Профиль</h1>
+      <div id="profile-stats" class="profile-stats"></div>
+      <button id="profile-back" class="btn start-btn profile-back-btn">← Назад</button>
+    </div>
+  </div>
+
+  <!-- Игровой экран -->
+  <div id="game-screen" class="screen">
+    <div class="container">
+      <h1>Судоку</h1>
 
     <div class="status-bar">
       <span>⏱ <span id="timer">00:00</span></span>
       <span>🏆 <span id="score">0</span> очк.</span>
       <span class="combo" id="combo"></span>
       <span>❌ Ошибки: <span id="mistakes">0</span>/3</span>
+      <button id="pause" class="btn pause-btn" title="Пауза">⏸</button>
     </div>
 
     <div id="board" class="board"></div>
@@ -46,10 +57,30 @@
     <div class="actions">
       <button id="notes-toggle" class="btn">✏ Заметки: выкл</button>
       <button id="hint" class="btn">💡 Подсказка</button>
-      <button id="check" class="btn">✔ Проверить</button>
     </div>
 
     <p id="message" class="message"></p>
+    </div>
+  </div>
+
+  <!-- Окно паузы -->
+  <div id="pause-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>⏸ Пауза</h2>
+      <div class="pause-buttons">
+        <button id="pause-resume" class="btn start-btn">Продолжить</button>
+        <button id="pause-exit" class="btn start-btn">Выход</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Окно выбора сложности -->
+  <div id="diff-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Выберите сложность</h2>
+      <div class="diff-select" id="diff-select"></div>
+      <button id="diff-cancel" class="btn">Отмена</button>
+    </div>
   </div>
 
   <!-- Модальное окно завершения игры -->
@@ -57,7 +88,10 @@
     <div class="modal-content">
       <h2 id="modal-title">Поздравляем!</h2>
       <p id="modal-text"></p>
-      <button id="modal-close" class="btn">Новая игра</button>
+      <div class="endgame-buttons">
+        <button id="modal-close" class="btn">Новая игра</button>
+        <button id="modal-exit" class="btn">На главный экран</button>
+      </div>
     </div>
   </div>
 

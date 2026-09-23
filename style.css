@@ -48,6 +48,158 @@ body {
   width: 100%;
 }
 
+/* ---------- Экраны и плавные переходы ---------- */
+.screen {
+  display: none;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.screen.active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#game-screen.active {
+  display: block;
+}
+
+#game-screen.active .container {
+  animation: gameFade 0.45s ease;
+}
+
+@keyframes gameFade {
+  0% { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Стартовый экран ---------- */
+#start-screen {
+  min-height: 100vh;
+  justify-content: center;
+}
+
+.game-title {
+  font-size: clamp(48px, 12vw, 84px);
+  margin-bottom: 40px;
+  animation: titleIn 0.8s ease;
+}
+
+@keyframes titleIn {
+  0% { opacity: 0; transform: translateY(-30px) scale(0.9); letter-spacing: 20px; }
+  100% { opacity: 1; transform: translateY(0) scale(1); letter-spacing: 4px; }
+}
+
+.start-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 260px;
+  animation: buttonsIn 0.8s ease 0.25s backwards;
+}
+
+@keyframes buttonsIn {
+  0% { opacity: 0; transform: translateY(24px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.start-btn {
+  font-size: 18px;
+  padding: 14px 0;
+  border-radius: 10px;
+}
+
+.start-btn.hidden {
+  display: none;
+}
+
+/* ---------- Экран профиля ---------- */
+#profile-screen {
+  min-height: 100vh;
+  justify-content: center;
+}
+
+.profile-container {
+  max-width: 420px;
+  width: 100%;
+}
+
+.profile-title {
+  font-size: 36px;
+  margin-bottom: 24px;
+  animation: titleIn 0.8s ease;
+}
+
+.profile-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: buttonsIn 0.8s ease 0.25s backwards;
+}
+
+/* Карточка уровня в профиле */
+.profile-row {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-row.locked {
+  background: var(--locked-bg);
+  color: var(--locked-text);
+}
+
+.profile-row .level-name {
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.profile-row .level-stats {
+  display: flex;
+  gap: 14px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.profile-row .level-stats span {
+  white-space: nowrap;
+}
+
+.profile-back-btn {
+  margin-top: 24px;
+  width: 220px;
+}
+
+/* ---------- Окно выбора сложности ---------- */
+.diff-select {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  width: 240px;
+}
+
+.diff-select .diff-btn {
+  font-size: 16px;
+  padding: 12px;
+  text-align: center;
+}
+
+.diff-select .diff-btn .progress {
+  display: inline;
+  margin-left: 6px;
+}
+
 h1 {
   margin-bottom: 16px;
   letter-spacing: 4px;
@@ -130,6 +282,39 @@ h1 {
   padding: 0 6px;
   margin-bottom: 10px;
   font-size: 15px;
+}
+
+/* Кнопка паузы */
+.pause-btn {
+  padding: 4px 10px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* Кнопки в окне паузы */
+.pause-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 220px;
+}
+
+.pause-buttons .btn {
+  font-size: 16px;
+  padding: 12px;
+}
+
+/* Кнопки в окне завершения игры */
+.endgame-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 220px;
+}
+
+.endgame-buttons .btn {
+  font-size: 16px;
+  padding: 12px;
 }
 
 /* Подпрыгивание счёта при начислении очков */
