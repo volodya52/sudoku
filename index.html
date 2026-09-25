@@ -14,6 +14,17 @@
       <button id="btn-new-game" class="btn start-btn">Новая игра</button>
       <button id="btn-continue" class="btn start-btn hidden">Продолжить</button>
       <button id="btn-profile" class="btn start-btn">👤 Профиль</button>
+      <button id="btn-shop" class="btn start-btn">🛒 Улучшения</button>
+    </div>
+  </div>
+
+  <!-- Экран улучшений (магазин) -->
+  <div id="shop-screen" class="screen">
+    <div class="profile-container">
+      <h1 class="profile-title">🛒 Улучшения</h1>
+      <p class="shop-coins"><img src="coins.png" class="coin-icon" alt="монеты"> <span id="shop-coins">0</span> монет</p>
+      <div id="shop-items" class="profile-stats"></div>
+      <button id="shop-back" class="btn start-btn profile-back-btn">← Назад</button>
     </div>
   </div>
 
@@ -34,8 +45,10 @@
     <div class="status-bar">
       <span>⏱ <span id="timer">00:00</span></span>
       <span>🏆 <span id="score">0</span> очк.</span>
+      <span><img src="coins.png" class="coin-icon" alt="монеты"> <span id="coins">0</span></span>
       <span class="combo" id="combo"></span>
-      <span>❌ Ошибки: <span id="mistakes">0</span>/3</span>
+      <span>❌ <span id="mistakes">0</span>/<span id="mistakes-max">3</span></span>
+      <span>💡 <span id="hints">1</span></span>
       <button id="pause" class="btn pause-btn" title="Пауза">⏸</button>
     </div>
 

@@ -21,6 +21,10 @@ let streak = 0;        // серия правильных цифр подряд
 let lastFlashCombo = 1; // последний множитель, для которого показана вспышка
 let bestCombo = 1;      // лучшее комбо за текущую игру
 let doneDigits = new Set(); // «вышедшие» цифры: все 9 стоят на поле
+let coins = 0;          // баланс монет игрока
+let upgrades = { mistakes: 0, hints: 0 }; // купленные улучшения (уровни)
+let hintsLeft = 1;      // подсказок осталось на текущем уровне
+let hintsUsed = 0;      // подсказок использовано на текущем уровне
 
 // Количество подсказок, очки за цифру и условие разблокировки для каждого уровня
 const LEVELS = {
@@ -35,12 +39,34 @@ const WINS_TO_UNLOCK = 5;
 const STORAGE_KEY = "sudoku_progress";
 const BEST_SCORE_KEY = "sudoku_best_scores";
 const SAVE_KEY = "sudoku_saved_game";
+const COINS_KEY = "sudoku_coins";
+const UPGRADES_KEY = "sudoku_upgrades";
+
+// Монеты за победу по уровням сложности
+const LEVEL_COINS = { easy: 20, medium: 35, hard: 50, expert: 70, master: 90 };
+
+// Параметры улучшений
+const MAX_MISTAKES_LIMIT = 8;   // максимум ошибок
+const MAX_HINTS_LIMIT = 5;      // максимум подсказок
+const mistakeUpgradeCost = (lvl) => 40 + lvl * 20; // 40..120
+const hintUpgradeCost = (lvl) => 50 + lvl * 25;    // 50..125
+
+// Лимиты текущей игры (с учётом улучшений)
+function getMistakesLimit() {
+  return Math.min(3 + upgrades.mistakes, MAX_MISTAKES_LIMIT);
+}
+function getHintsLimit() {
+  return Math.min(1 + upgrades.hints, MAX_HINTS_LIMIT);
+}
 
 // Прогресс игрока: количество побед на каждом уровне
 let progress = loadProgress();
 
 // Статистика игрока по уровням (для профиля)
 let stats = getStats();
+coins = loadCoins();
+upgrades = loadUpgrades();
+maxMistakes = getMistakesLimit();
 
 function loadProgress() {
   try {
@@ -56,6 +82,31 @@ function loadProgress() {
 
 function saveProgress() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+}
+
+// ---------- Монеты и улучшения ----------
+function loadCoins() {
+  return Number(localStorage.getItem(COINS_KEY)) || 0;
+}
+
+function saveCoins() {
+  localStorage.setItem(COINS_KEY, String(coins));
+}
+
+function loadUpgrades() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(UPGRADES_KEY));
+    if (saved && typeof saved === "object")
+      return {
+        mistakes: Math.min(Number(saved.mistakes) || 0, MAX_MISTAKES_LIMIT - 3),
+        hints: Math.min(Number(saved.hints) || 0, MAX_HINTS_LIMIT - 1),
+      };
+  } catch (e) { /* повреждённые данные */ }
+  return { mistakes: 0, hints: 0 };
+}
+
+function saveUpgrades() {
+  localStorage.setItem(UPGRADES_KEY, JSON.stringify(upgrades));
 }
 
 // ============================================================
@@ -155,12 +206,15 @@ function showFloatingPoints(gained, r, c) {
 // Позиционируется относительно доски с обрезкой по краям,
 // чтобы сообщение никогда не выходило за границы поля.
 // Для верхней строки — снизу (не обрезается верхней границей).
-function showCellMessage(r, c, text) {
+function showCellMessage(r, c, text, options = {}) {
   const cellSize = boardEl.clientWidth / 9;
   if (!cellSize) return; // доска не отрисована
 
   const span = document.createElement("span");
-  span.className = "cell-message" + (r === 0 ? " below" : "");
+  span.className =
+    "cell-message" +
+    (options.hint ? " hint-msg" : "") +
+    (r === 0 ? " below" : "");
   span.textContent = text;
   boardEl.appendChild(span);
 
@@ -170,7 +224,7 @@ function showCellMessage(r, c, text) {
   // Вертикаль: над клеткой, для верхней строки — под клеткой
   const cellTop = r * cellSize;
   if (r === 0) span.style.top = cellSize + 2 + "px";
-  else span.style.top = cellTop - 26 + "px";
+  else span.style.top = Math.max(4, cellTop - 26) + "px";
 
   // Горизонталь: центр на клетке, но не выходя за края доски
   const boardW = boardEl.clientWidth;
@@ -182,7 +236,9 @@ function showCellMessage(r, c, text) {
   // Стрелка указывает точно на цифру (центр клетки)
   span.style.setProperty("--arrow-x", Math.round(centerX - left) + "px");
 
-  setTimeout(() => span.remove(), 1400);
+  const duration = options.duration || 1400;
+  span.style.animationDuration = duration / 1000 + "s";
+  setTimeout(() => span.remove(), duration);
 }
 
 // Большая вспышка «КОМБО X2!» в центре экрана
@@ -290,6 +346,105 @@ function renderProfile() {
   }
 }
 
+// ============================================================
+//  Монеты и магазин улучшений
+// ============================================================
+
+function updateCoinsDisplay() {
+  coinsEl.textContent = coins;
+  const shopCoins = document.getElementById("shop-coins");
+  if (shopCoins) shopCoins.textContent = coins;
+}
+
+// Расчёт монет за пройденный уровень: сложность, ошибки, подсказки, время
+function computeCoinsEarned() {
+  let earned = LEVEL_COINS[difficulty];
+  earned -= mistakes * 5;               // штраф за ошибки
+  earned -= hintsUsed * 5;              // штраф за подсказки
+  earned += Math.max(0, Math.round((600 - seconds) / 10)); // бонус за скорость (до 60)
+  return Math.max(5, earned);           // минимум 5 монет за победу
+}
+
+function updateHintsDisplay() {
+  hintsEl.textContent = hintsLeft;
+  hintBtn.textContent = `💡 Подсказка (${hintsLeft})`;
+}
+
+// ---------- Магазин ----------
+
+// Иконка монеты для HTML-вставок (файл coins.png)
+function coinIconHTML() {
+  return `<img src="coins.png" class="coin-icon" alt="монеты">`;
+}
+
+function buyUpgrade(type) {
+  const isMistakes = type === "mistakes";
+  const level = upgrades[type];
+  const maxed = isMistakes
+    ? 3 + upgrades.mistakes >= MAX_MISTAKES_LIMIT
+    : 1 + upgrades.hints >= MAX_HINTS_LIMIT;
+  const cost = isMistakes
+    ? mistakeUpgradeCost(level)
+    : hintUpgradeCost(level);
+
+  if (maxed) return;
+  if (coins < cost) {
+    showMessage(`Не хватает монет: нужно ${cost}, у вас ${coins}`);
+    return;
+  }
+  coins -= cost;
+  upgrades[type]++;
+  saveCoins();
+  saveUpgrades();
+  updateCoinsDisplay();
+  renderShop();
+}
+
+// Отрисовка экрана магазина
+function renderShop() {
+  updateCoinsDisplay();
+  const container = document.getElementById("shop-items");
+  container.innerHTML = "";
+
+  const cards = [
+    {
+      type: "mistakes",
+      title: "❌ Ошибки",
+      current: getMistakesLimit(),
+      max: MAX_MISTAKES_LIMIT,
+      desc: "Допустимо неверных цифр за уровень",
+      cost: mistakeUpgradeCost(upgrades.mistakes),
+      maxed: 3 + upgrades.mistakes >= MAX_MISTAKES_LIMIT,
+    },
+    {
+      type: "hints",
+      title: "💡 Подсказки",
+      current: getHintsLimit(),
+      max: MAX_HINTS_LIMIT,
+      desc: "Доступно на каждом уровне",
+      cost: hintUpgradeCost(upgrades.hints),
+      maxed: 1 + upgrades.hints >= MAX_HINTS_LIMIT,
+    },
+  ];
+
+  for (const card of cards) {
+    const el = document.createElement("div");
+    el.className = "shop-card";
+    el.innerHTML =
+      `<div class="card-info">
+         <div class="card-title">${card.title}: ${card.current}/${card.max}</div>
+         <div class="card-desc">${card.desc}</div>
+       </div>`;
+    const btn = document.createElement("button");
+    btn.className = "btn buy-btn";
+    btn.innerHTML = `${coinIconHTML()} ${card.cost} — +1`;
+    btn.disabled = coins < card.cost;
+    btn.addEventListener("click", () => buyUpgrade(card.type));
+    el.appendChild(btn);
+    container.appendChild(el);
+  }
+}
+
 // Разблокирован ли уровень
 function isUnlocked(level) {
   const idx = LEVEL_ORDER.indexOf(level);
@@ -315,6 +470,11 @@ const btnContinue = document.getElementById("btn-continue");
 const diffModal = document.getElementById("diff-modal");
 const diffSelect = document.getElementById("diff-select");
 const pauseModal = document.getElementById("pause-modal");
+const coinsEl = document.getElementById("coins");
+const hintsEl = document.getElementById("hints");
+const mistakesMaxEl = document.getElementById("mistakes-max");
+const hintBtn = document.getElementById("hint");
+const shopScreen = document.getElementById("shop-screen");
 
 // ============================================================
 //  Генерация судоку
@@ -595,8 +755,52 @@ function isSolved() {
   return true;
 }
 
+// Аргументация подсказки: почему цифра стоит именно в этой клетке
+function hintReason(r, c, num) {
+  const blockName = `${["верхнем", "среднем", "нижнем"][Math.floor(r / 3)]}-${["левом", "среднем", "правом"][Math.floor(c / 3)]}`;
+
+  // Единицы измерения: строка, столбец, блок — где у цифры только одно место
+  const units = [
+    {
+      name: `строке ${r + 1}`,
+      cells: Array.from({ length: 9 }, (_, i) => [r, i]),
+    },
+    {
+      name: `столбце ${c + 1}`,
+      cells: Array.from({ length: 9 }, (_, i) => [i, c]),
+    },
+    {
+      name: `${blockName} блоке`,
+      cells: (() => {
+        const cells = [];
+        const br = Math.floor(r / 3) * 3;
+        const bc = Math.floor(c / 3) * 3;
+        for (let i = br; i < br + 3; i++)
+          for (let j = bc; j < bc + 3; j++) cells.push([i, j]);
+        return cells;
+      })(),
+    },
+  ];
+
+  for (const unit of units) {
+    let spots = 0;
+    for (const [rr, cc] of unit.cells)
+      if (board[rr][cc] === 0 && isValid(board, rr, cc, num)) spots++;
+    if (spots === 1)
+      return `Цифра ${num} — единственное свободное место в ${unit.name}`;
+  }
+  return `Цифра ${num} не конфликтует со строкой ${r + 1}, столбцом ${c + 1} и ${blockName} блоком`;
+}
+
 function giveHint() {
   if (gameOver || paused) return;
+
+  // Подсказки ограничены количеством на уровень
+  if (hintsLeft <= 0) {
+    showMessage("Подсказки закончились! Купите больше в улучшениях 🛒");
+    return;
+  }
+
   const empties = [];
   for (let r = 0; r < 9; r++)
     for (let c = 0; c < 9; c++)
@@ -604,12 +808,22 @@ function giveHint() {
   if (empties.length === 0) return;
 
   const [r, c] = empties[Math.floor(Math.random() * empties.length)];
+
+  // Рассчитываем аргументацию ДО установки цифры (по пустому полю)
+  const oldValue = board[r][c];
+  board[r][c] = 0;
+  const reason = hintReason(r, c, solution[r][c]);
+  board[r][c] = oldValue;
+
   board[r][c] = solution[r][c];
   notes[r][c].clear();
   selected = { r, c };
+  hintsLeft--;
+  hintsUsed++;
+  updateHintsDisplay();
   penalizeHint();
   checkDigitDone(solution[r][c]);
-  showMessage("Подсказка использована (-10 очков)");
+  showCellMessage(r, c, reason, { hint: true, duration: 3000 });
   saveGame();
   renderBoard();
   if (isSolved()) {
@@ -643,18 +857,25 @@ function endGame(won) {
     const isRecord = saveBestScore();
     const best = getBestScores()[difficulty];
 
+    // Начисление монет за пройденный уровень
+    const coinsEarned = computeCoinsEarned();
+    coins += coinsEarned;
+    saveCoins();
+    updateCoinsDisplay();
+
     let unlockMsg = "";
     if (newlyUnlocked.length > 0)
       unlockMsg = `\n\n🔓 Открыт новый уровень: ${newlyUnlocked.join(", ")}!`;
 
     modalTitle.textContent = "🎉 Поздравляем!";
-    modalText.textContent =
-      `Вы решили судоку (${levelName}) за ${time}!\n` +
-      `🏆 Итоговые очки: ${score}\n` +
-      `🔥 Лучшее комбо: x${bestCombo % 1 ? bestCombo.toFixed(1) : bestCombo}\n` +
-      `Бонус за победу: +${levelBonus}, за скорость: +${speedBonus}\n` +
+    modalText.innerHTML =
+      `Вы решили судоку (${levelName}) за ${time}!<br>` +
+      `🏆 Итоговые очки: ${score}<br>` +
+      `🔥 Лучшее комбо: x${bestCombo % 1 ? bestCombo.toFixed(1) : bestCombo}<br>` +
+      `${coinIconHTML()} Получено монет: ${coinsEarned} (баланс: ${coins})<br>` +
+      `Бонус за победу: +${levelBonus}, за скорость: +${speedBonus}<br>` +
       (isRecord ? `⭐ Новый рекорд уровня!` : `Рекорд уровня: ${best}`) +
-      unlockMsg;
+      unlockMsg.replace(/\n/g, "<br>");
   } else {
     updateStats(difficulty, { won: false });
     saveStats();
@@ -736,11 +957,12 @@ function startTimer() {
 //  Экраны (стартовый / игровой / профиль) и окна
 // ============================================================
 
-const SCREENS = { start: startScreen, game: gameScreen, profile: profileScreen };
+const SCREENS = { start: startScreen, game: gameScreen, profile: profileScreen, shop: shopScreen };
 
 function showScreen(name) {
   // Плавный переход: сначала гасим текущий экран, потом показываем новый
   if (name === "profile") renderProfile();
+  if (name === "shop") renderShop();
   const current = document.querySelector(".screen.active");
   if (current && current.id === name) return;
   const switchTo = () => {
@@ -843,6 +1065,9 @@ function saveGame() {
     board,
     notes: notes.map((row) => row.map((set) => [...set])),
     mistakes,
+    maxMistakes,
+    hintsLeft,
+    hintsUsed,
     seconds,
     score,
     streak,
@@ -882,6 +1107,12 @@ function continueGame() {
   board = data.board;
   notes = data.notes.map((row) => row.map((arr) => new Set(arr)));
   mistakes = data.mistakes;
+  maxMistakes = data.maxMistakes || getMistakesLimit();
+  mistakesMaxEl.textContent = maxMistakes;
+  hintsLeft = data.hintsLeft ?? getHintsLimit();
+  hintsUsed = data.hintsUsed || 0;
+  updateHintsDisplay();
+  updateCoinsDisplay();
   seconds = data.seconds;
   score = data.score;
   streak = data.streak;
@@ -931,6 +1162,12 @@ function newGame() {
   mistakes = 0;
   gameOver = false;
   mistakesEl.textContent = "0";
+  maxMistakes = getMistakesLimit();
+  mistakesMaxEl.textContent = maxMistakes;
+  hintsLeft = getHintsLimit();
+  hintsUsed = 0;
+  updateHintsDisplay();
+  updateCoinsDisplay();
   score = 0;
   streak = 0;
   bestCombo = 1;
@@ -968,6 +1205,8 @@ document.getElementById("modal-close").addEventListener("click", () => {
 document.getElementById("btn-new-game").addEventListener("click", openDiffModal);
 document.getElementById("btn-continue").addEventListener("click", continueGame);
 document.getElementById("btn-profile").addEventListener("click", () => showScreen("profile"));
+document.getElementById("btn-shop").addEventListener("click", () => showScreen("shop"));
+document.getElementById("shop-back").addEventListener("click", () => showScreen("start"));
 document.getElementById("profile-back").addEventListener("click", () => showScreen("start"));
 document.getElementById("diff-cancel").addEventListener("click", closeDiffModal);
 
@@ -1018,4 +1257,7 @@ document.addEventListener("keydown", (e) => {
 // Старт: показываем стартовый экран (поле отрисуется при старте игры)
 renderDiffSelect();
 updateContinueButton();
+updateCoinsDisplay();
+updateHintsDisplay();
+mistakesMaxEl.textContent = maxMistakes;
 showScreen("start");

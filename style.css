@@ -180,6 +180,67 @@ body {
   width: 220px;
 }
 
+/* ---------- Магазин улучшений ---------- */
+/* Иконка монеты (файл coins.png) */
+.coin-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  vertical-align: -3px;
+  display: inline-block;
+}
+
+.buy-btn .coin-icon,
+.shop-coins .coin-icon {
+  width: 20px;
+  height: 20px;
+  vertical-align: -4px;
+}
+
+.shop-coins {
+  font-size: 20px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  animation: buttonsIn 0.8s ease 0.15s backwards;
+}
+
+.shop-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.shop-card .card-info {
+  text-align: left;
+}
+
+.shop-card .card-title {
+  font-weight: bold;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.shop-card .card-desc {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.buy-btn {
+  min-width: 130px;
+  font-size: 14px;
+}
+
+.buy-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ---------- Окно выбора сложности ---------- */
 .diff-select {
   display: flex;
@@ -420,6 +481,23 @@ h1 {
   bottom: 100%;
   border-top-color: transparent;
   border-bottom-color: var(--conflict);
+}
+
+/* Сообщение-аргументация подсказки (синее, дольше) */
+.cell-message.hint-msg {
+  background: var(--selected);
+  font-size: 12px;
+  max-width: 300px;
+  white-space: normal;
+  text-align: center;
+}
+
+.cell-message.hint-msg::after {
+  border-top-color: var(--selected);
+}
+
+.cell-message.hint-msg.below::after {
+  border-bottom-color: var(--selected);
 }
 
 @keyframes msgSlide {
